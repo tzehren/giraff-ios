@@ -1,10 +1,11 @@
 import UIKit
 
-class ViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableViewDelegate {
+class StreamViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableViewDelegate {
     @IBOutlet weak var swipeableView: ZLSwipeableView!
-    @IBOutlet weak var refreshButton: UIButton!
+    @IBOutlet weak var revealButtonItem: UIBarButtonItem!
     
     var deck = Deck()
+    var swipeStart: CGPoint!
     
     var deckSourceMode = "new"
     
@@ -16,6 +17,11 @@ class ViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableVi
         titleImageView.contentMode = .ScaleAspectFit
         titleImageView.image = titleImage
         self.navigationItem.titleView = titleImageView
+
+        let rvc = self.revealViewController()
+        revealButtonItem.target = rvc
+        revealButtonItem.action = "revealToggle:"
+        navigationController!.navigationBar.addGestureRecognizer(rvc.panGestureRecognizer())
 
         view.setNeedsLayout()
         view.layoutIfNeeded()
@@ -37,11 +43,11 @@ class ViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableVi
         swipeableView.layoutIfNeeded()
     }
     
-    @IBAction func switchToFavesButtonWasPressed(sender: AnyObject) {
-        deck.deckSourceMode = DeckSourceMode.Faves
-        deck.reset()
-        fetchCardsAndUpdateView()
-    }
+//    @IBAction func switchToFavesButtonWasPressed(sender: AnyObject) {
+//        deck.deckSourceMode = DeckSourceMode.Faves
+//        deck.reset()
+//        fetchCardsAndUpdateView()
+//    }
 
     @IBAction func faveButtonWasPressed(sender: AnyObject) {
         swipeableView.swipeTopViewToRight()
@@ -50,6 +56,16 @@ class ViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableVi
     @IBAction func passButtonWasPressed(sender: AnyObject) {
         swipeableView.swipeTopViewToLeft()
     }
+
+    @IBAction func shareButtonWasPressed(sender: AnyObject) {
+        let view = swipeableView.topSwipeableView() as GifView
+        let card = deck.cardForId(view.imageId!)!
+        let avc = UIActivityViewController(activityItems: [card.caption!, card.shareUrl()], applicationActivities: nil)
+        navigationController?.presentViewController(avc, animated: true, completion: { () -> Void in
+            NSLog("shared")
+        })
+    }
+
     
     func fetchCardsAndUpdateView() {
         weak var mySwipeableView : ZLSwipeableView?  = self.swipeableView
@@ -65,26 +81,62 @@ class ViewController: UIViewController, ZLSwipeableViewDataSource, ZLSwipeableVi
     
     // ZLSwipeableViewDelegate
     func swipeableView(swipeableView: ZLSwipeableView!, didStartSwipingView view: UIView!, atLocation location: CGPoint) {
+        swipeStart = location
 //        NSLog("swipe start")
     }
     
     func swipeableView(swipeableView: ZLSwipeableView!, didEndSwipingView view: UIView!, atLocation location: CGPoint) {
-//        NSLog("swipe end")
+        swipeStart = nil
+
+        let gifView = view as GifView
+        gifView.passLabel.alpha = 0.0
+        gifView.faveLabel.alpha = 0.0
     }
     
-    func swipeableView(swipeableView: ZLSwipeableView!, didSwipeLeft view: UIView!) {
+    func swipeableView(swipeableView: ZLSwipeableView!, didSwipeView view: UIView!, inDirection direction: ZLSwipeableViewDirection) {
         let gifView = view as GifView
-        NSLog("\(gifView.imageId) passed")
-        FunSession.sharedSession.imagePassed(gifView.imageId!)
+        switch(direction) {
+        case .Left:
+            NSLog("\(gifView.imageId) passed")
+            FunSession.sharedSession.imagePassed(gifView.imageId!)
+        case .Right:
+            NSLog("\(gifView.imageId) faved")
+            FunSession.sharedSession.imageFaved(gifView.imageId!)
+        default:
+            NSLog("ignore swipe")
+        }
     }
     
     func swipeableView(swipeableView: ZLSwipeableView!, didSwipeRight view: UIView!) {
         let gifView = view as GifView
-        NSLog("\(gifView.imageId) faved")
-        FunSession.sharedSession.imageFaved(gifView.imageId!)
     }
     
     func swipeableView(swipeableView: ZLSwipeableView!, swipingView view: UIView!, atLocation location: CGPoint, translation: CGPoint) {
+        let minimalDrag = CGFloat(10.0)
+        let maximumDrag = CGFloat(40.0)
+        let gifView = view as GifView
+        if let concreteSwipeStart = swipeStart {
+            let swipeDiff = location.x - concreteSwipeStart.x
+            let absSwipeDiff = abs(swipeDiff)
+
+            var alphaValue = CGFloat(0.0)
+            if (absSwipeDiff > maximumDrag) {
+                alphaValue = 1.0
+            } else if (absSwipeDiff > minimalDrag) {
+                alphaValue = (absSwipeDiff - minimalDrag) / (maximumDrag - minimalDrag)
+            }
+
+            if swipeDiff > 0 {
+                gifView.faveLabel.alpha = alphaValue
+                gifView.passLabel.alpha = 0.0
+            } else if swipeDiff < 0 {
+                gifView.faveLabel.alpha = 0.0
+                gifView.passLabel.alpha = alphaValue
+            } else {
+                gifView.faveLabel.alpha = 0.0
+                gifView.passLabel.alpha = 0.0
+            }
+        }
     }
     
     // ZLSwipeableViewDataSource
